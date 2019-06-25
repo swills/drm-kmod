@@ -1201,6 +1201,7 @@ int intel_ring_pin(struct intel_ring *ring)
 	GEM_BUG_ON(ring->vaddr);
 	ring->vaddr = addr;
 
+	GEM_TRACE("ring:%llx pin\n", ring->timeline->fence_context);
 	return 0;
 
 err_ring:
@@ -1226,6 +1227,8 @@ void intel_ring_unpin(struct intel_ring *ring)
 {
 	if (!atomic_dec_and_test(&ring->pin_count))
 		return;
+
+	GEM_TRACE("ring:%llx unpin\n", ring->timeline->fence_context);
 
 	/* Discard any unused bytes beyond that submitted to hw. */
 	intel_ring_reset(ring, ring->tail);
