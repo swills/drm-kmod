@@ -7,6 +7,8 @@
 #include <drm/drm_vram_mm_helper.h>
 #include <drm/ttm/ttm_page_alloc.h>
 
+static const struct drm_gem_object_funcs drm_gem_vram_object_funcs;
+
 /**
  * DOC: overview
  *
@@ -79,6 +81,9 @@ static int drm_gem_vram_init(struct drm_device *dev,
 {
 	int ret;
 	size_t acc_size;
+
+	if (!gbo->gem.funcs)
+		gbo->gem.funcs = &drm_gem_vram_object_funcs;
 
 	ret = drm_gem_object_init(dev, &gbo->gem, size);
 	if (ret)
@@ -614,3 +619,120 @@ int drm_gem_vram_driver_dumb_mmap_offset(struct drm_file *file,
 	return 0;
 }
 EXPORT_SYMBOL(drm_gem_vram_driver_dumb_mmap_offset);
+
+/*
+ * PRIME helpers for struct drm_driver
+ */
+
+/**
+ * drm_gem_vram_driver_gem_prime_pin() - \
+	Implements &struct drm_driver.gem_prime_pin
+ * @gem:	The GEM object to pin
+ *
+ * Returns:
+ * 0 on success, or
+ * a negative errno code otherwise.
+ */
+int drm_gem_vram_driver_gem_prime_pin(struct drm_gem_object *gem)
+{
+	struct drm_gem_vram_object *gbo = drm_gem_vram_of_gem(gem);
+
+	/* Fbdev console emulation is the use case of these PRIME
+	 * helpers. This may involve updating a hardware buffer from
+	 * a shadow FB. We pin the buffer to it's current location
+	 * (either video RAM or system memory) to prevent it from
+	 * being relocated during the update operation. If you require
+	 * the buffer to be pinned to VRAM, implement a callback that
+	 * sets the flags accordingly.
+	 */
+	return drm_gem_vram_pin(gbo, 0);
+}
+EXPORT_SYMBOL(drm_gem_vram_driver_gem_prime_pin);
+
+/**
+ * drm_gem_vram_driver_gem_prime_unpin() - \
+	Implements &struct drm_driver.gem_prime_unpin
+ * @gem:	The GEM object to unpin
+ */
+void drm_gem_vram_driver_gem_prime_unpin(struct drm_gem_object *gem)
+{
+	struct drm_gem_vram_object *gbo = drm_gem_vram_of_gem(gem);
+
+	drm_gem_vram_unpin(gbo);
+}
+EXPORT_SYMBOL(drm_gem_vram_driver_gem_prime_unpin);
+
+/**
+ * drm_gem_vram_driver_gem_prime_vmap() - \
+	Implements &struct drm_driver.gem_prime_vmap
+ * @gem:	The GEM object to map
+ *
+ * Returns:
+ * The buffers virtual address on success, or
+ * NULL otherwise.
+ */
+void *drm_gem_vram_driver_gem_prime_vmap(struct drm_gem_object *gem)
+{
+	struct drm_gem_vram_object *gbo = drm_gem_vram_of_gem(gem);
+	int ret;
+	void *base;
+
+	ret = drm_gem_vram_pin(gbo, 0);
+	if (ret)
+		return NULL;
+	base = drm_gem_vram_kmap(gbo, true, NULL);
+	if (IS_ERR(base)) {
+		drm_gem_vram_unpin(gbo);
+		return NULL;
+	}
+	return base;
+}
+EXPORT_SYMBOL(drm_gem_vram_driver_gem_prime_vmap);
+
+/**
+ * drm_gem_vram_driver_gem_prime_vunmap() - \
+	Implements &struct drm_driver.gem_prime_vunmap
+ * @gem:	The GEM object to unmap
+ * @vaddr:	The mapping's base address
+ */
+void drm_gem_vram_driver_gem_prime_vunmap(struct drm_gem_object *gem,
+					  void *vaddr)
+{
+	struct drm_gem_vram_object *gbo = drm_gem_vram_of_gem(gem);
+
+	drm_gem_vram_kunmap(gbo);
+	drm_gem_vram_unpin(gbo);
+}
+EXPORT_SYMBOL(drm_gem_vram_driver_gem_prime_vunmap);
+
+/**
+ * drm_gem_vram_driver_gem_prime_mmap() - \
+	Implements &struct drm_driver.gem_prime_mmap
+ * @gem:	The GEM object to map
+ * @vma:	The VMA describing the mapping
+ *
+ * Returns:
+ * 0 on success, or
+ * a negative errno code otherwise.
+ */
+int drm_gem_vram_driver_gem_prime_mmap(struct drm_gem_object *gem,
+				       struct vm_area_struct *vma)
+{
+	struct drm_gem_vram_object *gbo = drm_gem_vram_of_gem(gem);
+
+	gbo->gem.vma_node.vm_node.start = gbo->bo.vma_node.vm_node.start;
+	return drm_gem_prime_mmap(gem, vma);
+}
+EXPORT_SYMBOL(drm_gem_vram_driver_gem_prime_mmap);
+
+/*
+ * GEM object funcs
+ */
+
+static const struct drm_gem_object_funcs drm_gem_vram_object_funcs = {
+	.free	= drm_gem_vram_driver_gem_free_object_unlocked,
+	.pin	= drm_gem_vram_driver_gem_prime_pin,
+	.unpin	= drm_gem_vram_driver_gem_prime_unpin,
+	.vmap	= drm_gem_vram_driver_gem_prime_vmap,
+	.vunmap	= drm_gem_vram_driver_gem_prime_vunmap
+};
