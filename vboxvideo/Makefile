@@ -16,7 +16,6 @@ SRCS= 	\
 	vbox_irq.c \
 	vbox_main.c \
 	vbox_mode.c \
-	vbox_prime.c \
 	vbox_ttm.c \
 	vbva_base.c
 
