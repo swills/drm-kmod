@@ -751,6 +751,8 @@ void assert_forcewakes_active(struct intel_uncore *uncore,
 	if (!uncore->funcs.force_wake_get)
 		return;
 
+	spin_lock_irq(&uncore->lock);
+
 	assert_rpm_wakelock_held(uncore->rpm);
 
 	fw_domains &= uncore->fw_domains;
@@ -774,6 +776,8 @@ void assert_forcewakes_active(struct intel_uncore *uncore,
 			 domain->id, actual))
 			break;
 	}
+
+	spin_unlock_irq(&uncore->lock);
 }
 
 /* We give fast paths for the really cool registers */
