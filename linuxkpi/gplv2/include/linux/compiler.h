@@ -5,6 +5,7 @@
 
 #include <sys/syslog.h>
 #include <linux/types.h>
+#include <sys/param.h>
 
 #define LKPI_HAVE_SYSFS_GROUPS ((__FreeBSD_version > 1200517 && __FreeBSD_version < 1300000) || (__FreeBSD_version > 1300045))
 
@@ -54,6 +55,22 @@
 // BSDFIXME! (everything to end of this file)
 
 #include <linux/bitops.h>
+
+#if __FreeBSD_version < 1300101
+static inline size_t
+array_size(size_t x, size_t y)
+{
+        size_t retval;
+
+        if (__builtin_mul_overflow(x, y, &retval))
+                retval = SIZE_MAX;
+        return (retval);
+}
+#endif
+
+#if __FreeBSD_version <= 1300094
+#error OS out of date, please update to latest sources
+#endif
 
 // XXX: Move to better place?
 
